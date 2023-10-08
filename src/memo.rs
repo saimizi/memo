@@ -17,6 +17,7 @@ use {
         mem,
         path::{Path, PathBuf},
         process::Command,
+        rc::Rc,
         sync::atomic::{AtomicI32, Ordering},
     },
 };
@@ -237,6 +238,10 @@ impl MemoEntry {
         self.title.contains(key) || self.body.contains(key)
     }
 
+    pub fn match_any(&self, key: &str) -> bool {
+        self.match_tag(key) || self.match_content(key)
+    }
+
     pub fn full_path(&self) -> &str {
         &self.full_path
     }
@@ -322,7 +327,7 @@ impl Memo {
         self.entries.is_empty()
     }
 
-    pub fn find(&self, key_pair: Option<(&str, bool)>) -> Result<Vec<&MemoEntry>, MemoError> {
+    pub fn find(&self, key_pair: Option<(&str, bool)>) -> Result<MemoSearch, MemoError> {
         let mut result = vec![];
         if let Some((key, is_tag)) = key_pair {
             for entry in &self.entries {
@@ -340,7 +345,28 @@ impl Memo {
             }
         }
 
-        Ok(result)
+        Ok(MemoSearch {
+            entries: result,
+            root: &self.root,
+        })
+    }
+
+    pub fn find_else<F>(&self, cb: F) -> Result<MemoSearch, MemoError>
+    where
+        F: Fn(&MemoEntry) -> bool,
+    {
+        let mut result = vec![];
+
+        for entry in &self.entries {
+            if cb(entry) {
+                result.push(entry);
+            }
+        }
+
+        Ok(MemoSearch {
+            entries: result,
+            root: &self.root,
+        })
     }
 
     pub fn root(&self) -> &str {
@@ -362,5 +388,65 @@ impl Memo {
         })?;
 
         Ok(())
+    }
+}
+
+pub struct MemoSearch<'a> {
+    entries: Vec<&'a MemoEntry>,
+    root: &'a str,
+}
+
+impl<'a> MemoSearch<'a> {
+    #[allow(unused)]
+    pub fn find(&self, key_pair: Option<(&str, bool)>) -> Result<Self, MemoError> {
+        let mut result = vec![];
+        if let Some((key, is_tag)) = key_pair {
+            for &entry in &self.entries {
+                if is_tag {
+                    if entry.match_tag(key) {
+                        result.push(entry);
+                    }
+                } else if entry.match_tag(key) || entry.match_content(key) {
+                    result.push(entry);
+                }
+            }
+        } else {
+            for entry in &self.entries {
+                result.push(entry);
+            }
+        }
+
+        Ok(Self {
+            entries: result,
+            root: self.root,
+        })
+    }
+
+    #[allow(unused)]
+    pub fn find_else<F>(&self, cb: F) -> Result<Self, MemoError>
+    where
+        F: Fn(&MemoEntry) -> bool,
+    {
+        let mut result = vec![];
+
+        for &entry in &self.entries {
+            if cb(entry) {
+                result.push(entry);
+            }
+        }
+
+        Ok(Self {
+            entries: result,
+            root: self.root,
+        })
+    }
+
+    pub fn entries(&self) -> Vec<&MemoEntry> {
+        self.entries.clone()
+    }
+
+    #[allow(unused)]
+    pub fn root(&self) -> &str {
+        self.root
     }
 }

@@ -95,11 +95,13 @@ fn main() -> Result<(), MemoError> {
     let entries = {
         if let Some(tag) = &cli.tag {
             h1 = format!("Result for tag `{tag}`");
-            let mut m = memo.find(Some((tag, true)))?;
-            if let Some(key) = &cli.args {
-                m.retain(|&a| a.match_tag(key) || a.match_content(key));
-            }
-            m
+            memo.find_else(|entry: &MemoEntry| -> bool {
+                if let Some(key) = &cli.args {
+                    entry.match_tag(tag) && entry.match_any(key)
+                } else {
+                    entry.match_tag(tag)
+                }
+            })?
         } else if let Some(key) = &cli.args {
             h1 = format!("Result for key `{key}`");
             memo.find(Some((key, false)))?
@@ -108,9 +110,10 @@ fn main() -> Result<(), MemoError> {
         }
     };
 
-    result.push_str(&Html::h1(&format!("{h1} ({})", entries.len())));
+    result.push_str(&Html::h1(&format!("{h1} ({})", entries.entries().len())));
 
     let entries: Vec<String> = entries
+        .entries()
         .iter()
         .map(|&a| {
             let mut s = Html::link(a.title(), a.full_path());
