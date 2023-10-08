@@ -15,9 +15,12 @@ use {
     memo::{FileName, Memo, MemoEntry},
     std::{
         boxed::Box,
+        collections::VecDeque,
         ffi::{CStr, CString},
         fmt::Display,
-        fs, mem,
+        fs,
+        io::Cursor,
+        mem,
         process::Command,
         sync::atomic::{AtomicI32, Ordering},
     },
@@ -51,6 +54,14 @@ struct Cli {
 
     /// Keyword used to search memo
     args: Option<String>,
+}
+
+#[allow(unused)]
+enum Op {
+    Add,
+    Sub,
+    Mul,
+    Nop,
 }
 
 fn main() -> Result<(), MemoError> {
@@ -89,68 +100,153 @@ fn main() -> Result<(), MemoError> {
     }
 
     let mut result = String::new();
-
     let mut h1 = "Memo".to_string();
-
-    let entries = {
-        if let Some(tag) = &cli.tag {
-            h1 = format!("Result for tag `{tag}`");
-            memo.find_else(|entry: &MemoEntry| -> bool {
-                if let Some(key) = &cli.args {
-                    entry.match_tag(tag) && entry.match_any(key)
-                } else {
-                    entry.match_tag(tag)
-                }
-            })?
-        } else if let Some(key) = &cli.args {
-            h1 = format!("Result for key `{key}`");
-            memo.find(Some((key, false)))?
-        } else {
-            memo.find(None)?
-        }
+    let tag_entries = if let Some(tag) = &cli.tag {
+        let tag = tag.trim();
+        h1 = format!("Result for tag `{tag}`");
+        memo.find(Some((tag, true)))?
+    } else {
+        memo.new_search()
     };
 
-    result.push_str(&Html::h1(&format!("{h1} ({})", entries.entries().len())));
+    let args_entries = if let Some(keys) = &cli.args {
+        let mut current = 0_usize;
+        let mut search_queue = VecDeque::new();
+        let mut op_queue = VecDeque::new();
+        let keys = keys.trim_matches('+').trim_matches('-').trim_matches('*');
 
-    let entries: Vec<String> = entries
-        .entries()
-        .iter()
-        .map(|&a| {
-            let mut s = Html::link(a.title(), a.full_path());
-            s.push('\n');
-            s.push_str(&format!("tags: {}", a.tags()));
-            s.push('\n');
-            s.push_str(&format!("created at: {}", a.create_time()));
-            s
-        })
-        .collect();
+        loop {
+            jdebug!(current = current, keys_len = keys.len());
+            if current >= keys.len() {
+                break;
+            }
+
+            let target = &keys[current..];
+            let mut processed = false;
+            for (pos, a) in target.as_bytes().iter().enumerate() {
+                match a {
+                    b'+' => {
+                        let key = target[..pos].trim();
+
+                        search_queue.push_back(memo.find(Some((key, false)))?);
+                        jdebug!("+ push for {key}\n{:?}", search_queue);
+                        op_queue.push_back(Op::Add);
+                        current += pos + 1;
+                        processed = true;
+                        break;
+                    }
+                    b'-' => {
+                        let key = target[..pos].trim();
+                        search_queue.push_back(memo.find(Some((key, false)))?);
+                        jdebug!("- push for {key}\n{:?}", search_queue);
+                        op_queue.push_back(Op::Sub);
+                        current += pos + 1;
+                        processed = true;
+                        break;
+                    }
+                    b'*' => {
+                        let key = target[..pos].trim();
+                        search_queue.push_back(memo.find(Some((key, false)))?);
+                        jdebug!("* push for {key}\n{:?}", search_queue);
+                        op_queue.push_back(Op::Mul);
+                        current += pos + 1;
+                        processed = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            if processed {
+                continue;
+            }
+
+            let key = target.trim();
+            search_queue.push_back(memo.find(Some((key, false)))?);
+            jdebug!("push for {target}\n{:?}", search_queue);
+            current += target.len();
+        }
+
+        if !search_queue.is_empty() {
+            let mut search = search_queue.pop_front().unwrap();
+
+            while let Some(op) = op_queue.pop_front() {
+                let new = search_queue.pop_front().unwrap();
+                jdebug!("search before:\n{:?}", search);
+                jdebug!("new:\n{:?}", new);
+                match op {
+                    Op::Add => search = (search + new)?,
+                    Op::Sub => search = (search - new)?,
+                    Op::Mul => search = (search * new)?,
+                    Op::Nop => {}
+                }
+                jdebug!("search after:\n{:?}", search);
+            }
+            search
+        } else {
+            memo.new_search()
+        }
+    } else {
+        memo.new_search()
+    };
+
+    let entries = if cli.tag.is_some() {
+        if cli.args.is_some() {
+            (tag_entries * args_entries)?
+        } else {
+            tag_entries
+        }
+    } else if cli.args.is_some() {
+        args_entries
+    } else {
+        memo.find(None)?
+    };
 
     if !entries.is_empty() {
-        result.push_str(&Html::list(entries.iter().map(|a| a.as_str()).collect()));
+        result.push_str(&Html::h1(&format!("{h1} ({})", entries.entries().len())));
 
-        let output = format!("{}/index.html", memo.root());
+        let entries: Vec<String> = entries
+            .entries()
+            .iter()
+            .map(|&a| {
+                let mut s = Html::link(a.title(), a.full_path());
+                s.push('\n');
+                s.push_str(&format!("tags: {}", a.tags()));
+                s.push('\n');
+                s.push_str(&format!("created at: {}", a.create_time()));
+                s
+            })
+            .collect();
 
-        let _ = fs::remove_file(&output);
-        fs::write(&output, result).map_err(|e| {
-            Report::new(MemoError::IOError)
-                .attach_printable(format!("Failed to write result to {output}: {e}"))
-        })?;
+        if !entries.is_empty() {
+            result.push_str(&Html::list(entries.iter().map(|a| a.as_str()).collect()));
 
-        let mut handle = Command::new("w3m")
-            .arg("-num")
-            .args(["-T", "text/html"])
-            .arg(&output)
-            .spawn()
-            .map_err(|e| {
-                Report::new(MemoError::Unexpected)
-                    .attach_printable(format!("Failed to execute w3m: {e}"))
+            let output = format!("{}/index.html", memo.root());
+
+            let _ = fs::remove_file(&output);
+            fs::write(&output, result).map_err(|e| {
+                Report::new(MemoError::IOError)
+                    .attach_printable(format!("Failed to write result to {output}: {e}"))
             })?;
 
-        handle.wait().map_err(|e| {
-            Report::new(MemoError::Unexpected).attach_printable(format!("w3m failed: {e}"))
-        })?;
+            let mut handle = Command::new("w3m")
+                .arg("-num")
+                .args(["-T", "text/html"])
+                .arg(&output)
+                .spawn()
+                .map_err(|e| {
+                    Report::new(MemoError::Unexpected)
+                        .attach_printable(format!("Failed to execute w3m: {e}"))
+                })?;
+
+            handle.wait().map_err(|e| {
+                Report::new(MemoError::Unexpected).attach_printable(format!("w3m failed: {e}"))
+            })?;
+        } else {
+            jinfo!("No memo.");
+        }
     } else {
-        jinfo!("No memo.")
+        jinfo!("No memo.");
     }
 
     Ok(())

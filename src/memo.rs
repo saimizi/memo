@@ -11,10 +11,11 @@ use {
     std::{
         boxed::Box,
         ffi::{CStr, CString},
-        fmt::Display,
+        fmt::{self, Debug, Display},
         fs::{self, DirEntry},
         io::{BufRead, BufReader, BufWriter, Read, Write},
         mem,
+        ops::{Add, Mul, Sub},
         path::{Path, PathBuf},
         process::Command,
         rc::Rc,
@@ -118,6 +119,18 @@ impl FileName {
     }
 }
 
+impl PartialEq for FileName {
+    fn eq(&self, other: &Self) -> bool {
+        (self.year == other.year)
+            && (self.month == other.month)
+            && (self.day == other.day)
+            && (self.hour == other.hour)
+            && (self.minute == other.minute)
+            && (self.second == other.second)
+            && (self.suffix == other.suffix)
+    }
+}
+
 pub struct MemoEntry {
     title: String,
     body: String,
@@ -126,6 +139,13 @@ pub struct MemoEntry {
     full_path: String,
 }
 
+impl Debug for MemoEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.full_path)
+    }
+}
+
+#[allow(unused)]
 impl MemoEntry {
     pub fn load(file: &str) -> Result<MemoEntry, MemoError> {
         let path = Path::new(file);
@@ -247,11 +267,18 @@ impl MemoEntry {
     }
 }
 
+impl PartialEq for MemoEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.full_path == other.full_path
+    }
+}
+
 pub struct Memo {
     entries: Vec<MemoEntry>,
     root: String,
 }
 
+#[allow(unused)]
 impl Memo {
     fn setup_root(root_path: Option<&str>) -> Result<(String, String), MemoError> {
         let mut root = format!("{}/.memo", env!("HOME"));
@@ -327,6 +354,13 @@ impl Memo {
         self.entries.is_empty()
     }
 
+    pub fn new_search(&self) -> MemoSearch {
+        MemoSearch {
+            entries: vec![],
+            root: &self.root,
+        }
+    }
+
     pub fn find(&self, key_pair: Option<(&str, bool)>) -> Result<MemoSearch, MemoError> {
         let mut result = vec![];
         if let Some((key, is_tag)) = key_pair {
@@ -391,6 +425,7 @@ impl Memo {
     }
 }
 
+#[derive(Debug)]
 pub struct MemoSearch<'a> {
     entries: Vec<&'a MemoEntry>,
     root: &'a str,
@@ -448,5 +483,73 @@ impl<'a> MemoSearch<'a> {
     #[allow(unused)]
     pub fn root(&self) -> &str {
         self.root
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl<'a> PartialEq for MemoSearch<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.root != other.root {
+            return false;
+        }
+
+        if self.entries.len() != other.entries.len() {
+            return false;
+        }
+
+        for i in 0..self.entries.len() {
+            if self.entries[i] != other.entries[i] {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl<'a> Add for MemoSearch<'a> {
+    type Output = Result<MemoSearch<'a>, MemoError>;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        if self.root != rhs.root {
+            return Err(Report::new(MemoError::InvalidValue));
+        }
+
+        for &entry in &rhs.entries {
+            if !self.entries.iter().any(|&a| a == entry) {
+                self.entries.push(entry);
+            }
+        }
+
+        Ok(self)
+    }
+}
+
+impl<'a> Sub for MemoSearch<'a> {
+    type Output = Result<MemoSearch<'a>, MemoError>;
+    fn sub(mut self, rhs: Self) -> Self::Output {
+        if self.root != rhs.root {
+            return Err(Report::new(MemoError::InvalidValue));
+        }
+
+        self.entries
+            .retain(|&entry| !rhs.entries.iter().any(|&a| a == entry));
+        Ok(self)
+    }
+}
+
+impl<'a> Mul for MemoSearch<'a> {
+    type Output = Result<MemoSearch<'a>, MemoError>;
+    fn mul(mut self, rhs: Self) -> Self::Output {
+        if self.root != rhs.root {
+            return Err(Report::new(MemoError::InvalidValue));
+        }
+
+        self.entries
+            .retain(|&entry| rhs.entries.iter().any(|&a| a == entry));
+        Ok(self)
     }
 }
