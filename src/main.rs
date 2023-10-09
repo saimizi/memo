@@ -12,7 +12,7 @@ use {
     jlogger_tracing::{
         jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter, LogTimeFormat,
     },
-    memo::{FileName, Memo, MemoEntry},
+    memo::{FileName, MatchCondition, Memo, MemoEntry},
     std::{
         boxed::Box,
         collections::VecDeque,
@@ -40,6 +40,14 @@ struct Cli {
     /// Add html memo
     #[arg(short = 'A', long, conflicts_with = "add_text_memo")]
     add_html_memo: bool,
+
+    /// Ignore case sensitivity
+    #[arg(short = 'I', long, default_value_t = false)]
+    ignore_case: bool,
+
+    /// Match key as a word
+    #[arg(short = 'W', long, default_value_t = false)]
+    word: bool,
 
     /// Search the memo with a tag of "TAG"
     #[arg(short, long)]
@@ -92,8 +100,11 @@ fn main() -> Result<(), MemoError> {
         return Ok(());
     }
 
+    let condition = MatchCondition {
+        ignore_case: cli.ignore_case,
+        match_word: cli.word,
+    };
     let memo = Memo::load(cli.path.as_deref())?;
-
     if memo.is_empty() {
         jinfo!("No memo.");
         return Ok(());
@@ -104,7 +115,7 @@ fn main() -> Result<(), MemoError> {
     let tag_entries = if let Some(tag) = &cli.tag {
         let tag = tag.trim();
         h1 = format!("Result for tag `{tag}`");
-        memo.find(Some((tag, true)))?
+        memo.find(Some((tag, true, condition)))?
     } else {
         memo.new_search()
     };
@@ -128,7 +139,7 @@ fn main() -> Result<(), MemoError> {
                     b'+' => {
                         let key = target[..pos].trim();
 
-                        search_queue.push_back(memo.find(Some((key, false)))?);
+                        search_queue.push_back(memo.find(Some((key, false, condition)))?);
                         jdebug!("+ push for {key}\n{:?}", search_queue);
                         op_queue.push_back(Op::Add);
                         current += pos + 1;
@@ -137,7 +148,7 @@ fn main() -> Result<(), MemoError> {
                     }
                     b'-' => {
                         let key = target[..pos].trim();
-                        search_queue.push_back(memo.find(Some((key, false)))?);
+                        search_queue.push_back(memo.find(Some((key, false, condition)))?);
                         jdebug!("- push for {key}\n{:?}", search_queue);
                         op_queue.push_back(Op::Sub);
                         current += pos + 1;
@@ -146,7 +157,7 @@ fn main() -> Result<(), MemoError> {
                     }
                     b'*' => {
                         let key = target[..pos].trim();
-                        search_queue.push_back(memo.find(Some((key, false)))?);
+                        search_queue.push_back(memo.find(Some((key, false, condition)))?);
                         jdebug!("* push for {key}\n{:?}", search_queue);
                         op_queue.push_back(Op::Mul);
                         current += pos + 1;
@@ -157,14 +168,12 @@ fn main() -> Result<(), MemoError> {
                 }
             }
 
-            if processed {
-                continue;
+            if !processed {
+                let key = target.trim();
+                search_queue.push_back(memo.find(Some((key, false, condition)))?);
+                jdebug!("push for {target}\n{:?}", search_queue);
+                current += target.len();
             }
-
-            let key = target.trim();
-            search_queue.push_back(memo.find(Some((key, false)))?);
-            jdebug!("push for {target}\n{:?}", search_queue);
-            current += target.len();
         }
 
         if !search_queue.is_empty() {

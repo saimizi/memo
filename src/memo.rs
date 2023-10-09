@@ -23,6 +23,12 @@ use {
     },
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct MatchCondition {
+    pub ignore_case: bool,
+    pub match_word: bool,
+}
+
 #[derive(Debug)]
 pub struct FileName {
     year: String,
@@ -248,18 +254,40 @@ impl MemoEntry {
         self.name.create_time()
     }
 
-    pub fn match_tag(&self, tag: &str) -> bool {
+    pub fn match_tag(&self, tag: &str, condition: MatchCondition) -> bool {
+        let key = if condition.match_word {
+            format!(r"\b{tag}\b")
+        } else {
+            tag.to_owned()
+        };
+
+        let re = regex::RegexBuilder::new(&key)
+            .case_insensitive(condition.ignore_case)
+            .build()
+            .unwrap();
+
         self.tags
             .iter()
-            .any(|a| a.trim_matches('[').trim_matches(']') == tag)
+            .any(|a| re.is_match(a.trim_matches('[').trim_matches(']')))
     }
 
-    pub fn match_content(&self, key: &str) -> bool {
-        self.title.contains(key) || self.body.contains(key)
+    pub fn match_content(&self, key: &str, condition: MatchCondition) -> bool {
+        let key = if condition.match_word {
+            format!(r"\b{key}\b")
+        } else {
+            key.to_owned()
+        };
+
+        let re = regex::RegexBuilder::new(&key)
+            .case_insensitive(condition.ignore_case)
+            .build()
+            .unwrap();
+
+        re.is_match(&self.title) || re.is_match(&self.body)
     }
 
-    pub fn match_any(&self, key: &str) -> bool {
-        self.match_tag(key) || self.match_content(key)
+    pub fn match_any(&self, key: &str, condition: MatchCondition) -> bool {
+        self.match_tag(key, condition) || self.match_content(key, condition)
     }
 
     pub fn full_path(&self) -> &str {
@@ -361,15 +389,18 @@ impl Memo {
         }
     }
 
-    pub fn find(&self, key_pair: Option<(&str, bool)>) -> Result<MemoSearch, MemoError> {
+    pub fn find(
+        &self,
+        key_pair: Option<(&str, bool, MatchCondition)>,
+    ) -> Result<MemoSearch, MemoError> {
         let mut result = vec![];
-        if let Some((key, is_tag)) = key_pair {
+        if let Some((key, is_tag, condition)) = key_pair {
             for entry in &self.entries {
                 if is_tag {
-                    if entry.match_tag(key) {
+                    if entry.match_tag(key, condition) {
                         result.push(entry);
                     }
-                } else if entry.match_tag(key) || entry.match_content(key) {
+                } else if entry.match_any(key, condition) {
                     result.push(entry);
                 }
             }
@@ -433,15 +464,15 @@ pub struct MemoSearch<'a> {
 
 impl<'a> MemoSearch<'a> {
     #[allow(unused)]
-    pub fn find(&self, key_pair: Option<(&str, bool)>) -> Result<Self, MemoError> {
+    pub fn find(&self, key_pair: Option<(&str, bool, MatchCondition)>) -> Result<Self, MemoError> {
         let mut result = vec![];
-        if let Some((key, is_tag)) = key_pair {
+        if let Some((key, is_tag, condition)) = key_pair {
             for &entry in &self.entries {
                 if is_tag {
-                    if entry.match_tag(key) {
+                    if entry.match_tag(key, condition) {
                         result.push(entry);
                     }
-                } else if entry.match_tag(key) || entry.match_content(key) {
+                } else if entry.match_any(key, condition) {
                     result.push(entry);
                 }
             }
