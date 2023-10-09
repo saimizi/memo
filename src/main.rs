@@ -27,9 +27,16 @@ use {
 };
 
 #[derive(Parser)]
-#[command(author, version, about, long_about= None)]
+#[command(author, version, about, long_about= None, help_template="
+{before-help}{name} {version}
+{author-with-newline}
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}
+")]
 struct Cli {
-    /// Memo path
+    /// Root path to store memos, default is "$HOME/.memo/"
     #[arg(short, long)]
     path: Option<String>,
 
