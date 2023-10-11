@@ -225,7 +225,8 @@ fn main() -> Result<(), MemoError> {
             .entries()
             .iter()
             .map(|&a| {
-                let mut s = Html::link(a.title(), a.full_path());
+                let fix = Html::clear_html_tags(a.title());
+                let mut s = Html::link(&fix, a.full_path());
                 s.push('\n');
                 s.push_str(&format!("tags: {}", a.tags()));
                 s.push('\n');
