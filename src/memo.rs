@@ -10,6 +10,7 @@ use {
     regex::Regex,
     std::{
         boxed::Box,
+        env,
         ffi::{CStr, CString},
         fmt::{self, Debug, Display},
         fs::{self, DirEntry},
@@ -443,7 +444,8 @@ impl Memo {
         let file_name = FileName::create(is_html);
 
         let output = format!("{memo_dir}/{}", file_name.file_name());
-        let mut handle = Command::new("vim").arg(&output).spawn().map_err(|e| {
+        let editor = env::var("EDITOR").unwrap_or("vim".to_owned());
+        let mut handle = Command::new(editor).arg(&output).spawn().map_err(|e| {
             Report::new(MemoError::Unexpected)
                 .attach_printable(format!("Failed to execute vim: {e}"))
         })?;

@@ -16,6 +16,7 @@ use {
     std::{
         boxed::Box,
         collections::VecDeque,
+        env,
         ffi::{CStr, CString},
         fmt::Display,
         fs,
@@ -31,6 +32,10 @@ use {
 {before-help}{name} {version}
 {author-with-newline}
 {about-with-newline}
+Environment variable
+  EDITOR : editor used to create a new note (default: vim).
+  BROWSER: browser used to display notes (default: w3m).
+
 {usage-heading} {usage}
 
 {all-args}{after-help}
@@ -246,15 +251,19 @@ fn main() -> Result<(), MemoError> {
                     .attach_printable(format!("Failed to write result to {output}: {e}"))
             })?;
 
-            let mut handle = Command::new("w3m")
-                .arg("-num")
-                .args(["-T", "text/html"])
-                .arg(&output)
-                .spawn()
-                .map_err(|e| {
-                    Report::new(MemoError::Unexpected)
-                        .attach_printable(format!("Failed to execute w3m: {e}"))
-                })?;
+            let browser = env::var("BROWSER").unwrap_or("w3m".to_owned());
+            let mut args = vec![];
+            if &browser == "w3m" {
+                args.push("-num");
+                args.push("-T");
+                args.push("text/html");
+            }
+
+            args.push(&output);
+            let mut handle = Command::new(browser).args(args).spawn().map_err(|e| {
+                Report::new(MemoError::Unexpected)
+                    .attach_printable(format!("Failed to execute w3m: {e}"))
+            })?;
 
             handle.wait().map_err(|e| {
                 Report::new(MemoError::Unexpected).attach_printable(format!("w3m failed: {e}"))
