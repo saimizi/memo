@@ -1,3 +1,5 @@
+use regex::Regex;
+
 mod error;
 mod html;
 mod memo;
@@ -20,7 +22,7 @@ use {
         ffi::{CStr, CString},
         fmt::Display,
         fs,
-        io::Cursor,
+        io::{self, Cursor},
         mem,
         process::Command,
         sync::atomic::{AtomicI32, Ordering},
@@ -56,6 +58,10 @@ struct Cli {
     /// Ignore case sensitivity
     #[arg(short = 'I', long, default_value_t = false)]
     ignore_case: bool,
+
+    /// Delete notes in the search result.
+    #[arg(short, long)]
+    delete: bool,
 
     /// Match key as a word
     #[arg(short = 'W', long, default_value_t = false)]
@@ -222,6 +228,80 @@ fn main() -> Result<(), MemoError> {
     } else {
         memo.find(None)?
     };
+
+    if cli.delete {
+        if !entries.is_empty() {
+            for (i, entry) in entries.entries().into_iter().enumerate() {
+                eprintln!(" {:<4} {}", i + 1, Html::clear_html_tags(entry.title()));
+            }
+
+            eprint!(
+                "\nWhich to delete ( [y|yes|Y|Yes]=all | Index=like 1,2,3-5... | Other=cancel)?"
+            );
+            let mut selection = String::new();
+            io::stdin().read_line(&mut selection).unwrap();
+
+            if selection.is_empty() {
+                return Ok(());
+            }
+
+            match selection.as_str().trim() {
+                "y" | "yes" | "Y" | "Yes" => {
+                    for entry in entries.entries().into_iter() {
+                        jdebug!("Remove {}\n({})", entry.full_path(), entry.title());
+                        if let Err(e) = fs::remove_file(entry.full_path()) {
+                            jerror!("Failed to remove {}: {:?}", entry.full_path(), e);
+                        }
+                    }
+                }
+                patten => {
+                    let mut index: Vec<usize> = vec![];
+                    let patten = patten.replace(' ', "");
+                    let re = Regex::new("(([0-9]+-[0-9]+)|([0-9]+))").unwrap();
+
+                    for it in re.find_iter(&patten) {
+                        let number = it.as_str();
+
+                        if number.contains('-') {
+                            if let Some(pos) = number.as_bytes().iter().position(|&a| a == b'-') {
+                                let (a, b) = number.split_at(pos);
+                                let a = a.parse::<usize>().unwrap();
+                                let b = b.trim_matches('-').parse::<usize>().unwrap();
+
+                                let mut start = a;
+                                let mut end = b;
+
+                                if a > b {
+                                    start = b;
+                                    end = a;
+                                }
+
+                                for i in start..=end {
+                                    if !index.iter().any(|&a| a == i) {
+                                        index.push(i);
+                                    }
+                                }
+                            }
+                        } else {
+                            index.push(number.parse::<usize>().unwrap());
+                        }
+                    }
+
+                    for (i, entry) in entries.entries().into_iter().enumerate() {
+                        if index.iter().any(|&a| a == i + 1) {
+                            jdebug!("Remove {}\n({})", entry.full_path(), entry.title());
+                            if let Err(e) = fs::remove_file(entry.full_path()) {
+                                jerror!("Failed to remove {}: {:?}", entry.full_path(), e);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            jinfo!("No memo to delete.")
+        }
+        return Ok(());
+    }
 
     if !entries.is_empty() {
         result.push_str(&Html::h1(&format!("{h1} ({})", entries.entries().len())));

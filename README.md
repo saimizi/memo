@@ -50,7 +50,7 @@ $ memo -t <jmemo> [-WI]
 __Note__
 
 * By default, tag can be parted matched. For example you can specify "j" to match all tags include "j". If you want to match a complete tag name, add "-W" option.
-* By default, tag is searched case-sensitvely, You can specify "-I" to ignore cases.
+* By default, tag is searched case-sensitively, You can specify "-I" to ignore cases.
 
 
 #### Search By Keyword
@@ -78,7 +78,18 @@ __Note__
     'example + memo' means including "example" or "memo" keyword.
   * Not (-)
     'example + memo' means including "example" but __NOT__ including "memo" keyword.
-* Multiple logitical operators can be used. All operators are applied from left  to right without priority.
+* Multiple logical operators can be used. All operators are applied from left  to right without priority.
 * By default, keywords are parted matched. If you want to match a complete keyword, add "-W" option.
-* By default, keywords are searched case-sensitvely, You can specify "-I" to ignore cases.
+* By default, keywords are searched case-sensitively, You can specify "-I" to ignore cases.
 * You can combine the usage of tag and keyword search, in that case, search result is limited to notes with specified tag.
+* If neither tag or keyword is specified, all notes will be displayed.
+
+#### Delete Notes
+You can use a "-d" option together with search to select notes to delete.
+
+```
+$ memo 'jdemo + jmemo * note' -d
+```
+![sample](doc/jmemo_06.png)
+
+The example above will delete No1, No2 and No4 notes. If you input "y", "yes", "Y"  or "Yes", all notes listed will be deleted. Other keys will ignore delete operation.

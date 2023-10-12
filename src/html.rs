@@ -63,7 +63,7 @@ impl Html {
             fix.trim().to_owned()
         };
 
-        let re = Regex::new(r"<[a-z|A-Z|0-9|/]+>").unwrap();
+        let re = Regex::new(r"<[a-z|A-Z|0-9|/|:|_|^|-|%|&| |.|=]+>").unwrap();
         let fix = clear(re, orig, "");
 
         let re = Regex::new(" +").unwrap();
