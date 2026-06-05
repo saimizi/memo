@@ -19,6 +19,7 @@ use {
 pub enum MemoError {
     InvalidValue,
     IOError,
+    EmptyMemo,
     Unexpected,
 }
 
@@ -27,6 +28,7 @@ impl Display for MemoError {
         let msg = match self {
             MemoError::InvalidValue => "Invalid value",
             MemoError::IOError => "IO error",
+            MemoError::EmptyMemo => "Empty memo",
             MemoError::Unexpected => "Unexpected error",
         };
 

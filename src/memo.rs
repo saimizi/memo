@@ -91,7 +91,7 @@ impl FileName {
             .unwrap_or("txt");
 
         if suffix != "txt" && suffix != "html" {
-            jerror!("Invalid suffix for {name}");
+            jdebug!("Invalid suffix for {name}");
             return Err(Report::new(MemoError::InvalidValue)).attach_printable("Invalid suffix");
         }
 
@@ -224,7 +224,7 @@ impl MemoEntry {
 
         if title.trim().is_empty() {
             return Err(
-                Report::new(MemoError::Unexpected).attach_printable(format!("{file} is empty"))
+                Report::new(MemoError::EmptyMemo).attach_printable(format!("{file} is empty"))
             );
         }
 
@@ -366,12 +366,21 @@ impl Memo {
                     Ok(m) => {
                         entries.push(m);
                     }
-                    Err(e) => {
-                        jwarn!("Failed to load {f}, remove it:\n{:?}.", e);
-                        if let Err(e) = fs::remove_file(f) {
-                            jwarn!("Failed to remove {f}:\n{:?}", e);
+                    Err(e) => match e.current_context() {
+                        // Only remove files that are valid jmemo notes but
+                        // empty (the documented "clear content to delete"
+                        // behavior). Any other file we fail to load is just
+                        // ignored so non-jmemo files are never deleted.
+                        MemoError::EmptyMemo => {
+                            jwarn!("Remove empty memo {f}.");
+                            if let Err(e) = fs::remove_file(f) {
+                                jwarn!("Failed to remove {f}:\n{:?}", e);
+                            }
                         }
-                    }
+                        _ => {
+                            jdebug!("Skip {f} which is not a valid jmemo file:\n{:?}.", e);
+                        }
+                    },
                 }
             }
         }
