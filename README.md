@@ -36,6 +36,7 @@ __Note__
 
 * If you remove all the content and quit, the note will not be saved. You can also use this way to remove a note.
 * Created notes are saved in ${HOME}/.memo/memo/ as plain text/html file.
+* jmemo cleans up empty notes (a file with a valid jmemo name but no content) the next time it loads them. Any other files placed in ${HOME}/.memo/memo/ that are not jmemo notes are simply ignored and left untouched.
 
 ### Search and Display Note
 
