@@ -25,17 +25,23 @@ $ memo -a
 
 jmemo starts vim to create a new note. The first line is the title of the note and will be displayed in the note view. A tag is a word in the title and wrapped by "[]", like [jmemo]. You can create multiple tags in a title.
 
-A html note can be created by specifying "-A" instead of "-a", you can use html tags like in the note.
+The note format is selected with "-f". The default is "text"; "html" and "markdown" are also supported. For example, a html note (in which you can use html tags) is created with:
 ```
-$ memo -A
+$ memo -a -f html
 ```
 
 ![sample](doc/jmemo_02.png)
 
+A markdown note is created with:
+```
+$ memo -a -f markdown
+```
+Markdown notes are rendered to HTML when displayed, so they show up formatted in the browser.
+
 __Note__
 
 * If you remove all the content and quit, the note will not be saved. You can also use this way to remove a note.
-* Created notes are saved in ${HOME}/.memo/memo/ as plain text/html file.
+* Created notes are saved in ${HOME}/.memo/memo/ as plain text/html/markdown file.
 * jmemo cleans up empty notes (a file with a valid jmemo name but no content) the next time it loads them. Any other files placed in ${HOME}/.memo/memo/ that are not jmemo notes are simply ignored and left untouched.
 
 ### Search and Display Note

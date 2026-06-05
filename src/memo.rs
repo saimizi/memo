@@ -30,6 +30,32 @@ pub struct MatchCondition {
     pub match_word: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
+pub enum NoteFormat {
+    Text,
+    Html,
+    Markdown,
+}
+
+impl NoteFormat {
+    pub fn suffix(&self) -> &'static str {
+        match self {
+            NoteFormat::Text => "txt",
+            NoteFormat::Html => "html",
+            NoteFormat::Markdown => "md",
+        }
+    }
+
+    pub fn from_suffix(suffix: &str) -> Option<Self> {
+        match suffix {
+            "txt" => Some(NoteFormat::Text),
+            "html" => Some(NoteFormat::Html),
+            "md" => Some(NoteFormat::Markdown),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct FileName {
     year: String,
@@ -42,12 +68,9 @@ pub struct FileName {
 }
 
 impl FileName {
-    pub fn create(html: bool) -> Self {
+    pub fn create(format: NoteFormat) -> Self {
         let now = Local::now();
-        let mut suffix = String::from("txt");
-        if html {
-            suffix = String::from("html");
-        }
+        let suffix = format.suffix().to_string();
 
         Self {
             year: now.year().to_string(),
@@ -90,7 +113,7 @@ impl FileName {
             .map(|a| a.to_str().unwrap())
             .unwrap_or("txt");
 
-        if suffix != "txt" && suffix != "html" {
+        if NoteFormat::from_suffix(suffix).is_none() {
             jdebug!("Invalid suffix for {name}");
             return Err(Report::new(MemoError::InvalidValue)).attach_printable("Invalid suffix");
         }
@@ -294,6 +317,14 @@ impl MemoEntry {
     pub fn full_path(&self) -> &str {
         &self.full_path
     }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn is_markdown(&self) -> bool {
+        NoteFormat::from_suffix(&self.name.suffix) == Some(NoteFormat::Markdown)
+    }
 }
 
 impl PartialEq for MemoEntry {
@@ -448,9 +479,9 @@ impl Memo {
         &self.root
     }
 
-    pub fn create(root_path: Option<&str>, is_html: bool) -> Result<(), MemoError> {
+    pub fn create(root_path: Option<&str>, format: NoteFormat) -> Result<(), MemoError> {
         let (_root, memo_dir) = Memo::setup_root(root_path)?;
-        let file_name = FileName::create(is_html);
+        let file_name = FileName::create(format);
 
         let output = format!("{memo_dir}/{}", file_name.file_name());
         let editor = env::var("EDITOR").unwrap_or("vim".to_owned());

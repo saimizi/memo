@@ -47,6 +47,20 @@ impl Html {
         list
     }
 
+    pub fn markdown_page(title: &str, body_md: &str) -> String {
+        use pulldown_cmark::{html, Options, Parser};
+
+        // Render the whole note (title line + body) as one markdown
+        // document so the author's own markdown (e.g. a leading `# title`)
+        // controls the formatting instead of being forced into an <H1>.
+        let source = format!("{title}\n{body_md}");
+        let parser = Parser::new_ext(&source, Options::all());
+        let mut html_out = String::new();
+        html::push_html(&mut html_out, parser);
+
+        html_out
+    }
+
     pub fn clear_html_tags(orig: &str) -> String {
         let clear = |re: Regex, orig: &str, replace: &str| -> String {
             let mut matched = vec![];

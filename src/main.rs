@@ -14,7 +14,7 @@ use {
     jlogger_tracing::{
         jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter, LogTimeFormat,
     },
-    memo::{FileName, MatchCondition, Memo, MemoEntry},
+    memo::{FileName, MatchCondition, Memo, MemoEntry, NoteFormat},
     std::{
         boxed::Box,
         collections::VecDeque,
@@ -24,6 +24,7 @@ use {
         fs,
         io::{self, Cursor},
         mem,
+        path::Path,
         process::Command,
         sync::atomic::{AtomicI32, Ordering},
     },
@@ -47,13 +48,13 @@ struct Cli {
     #[arg(short, long)]
     path: Option<String>,
 
-    /// Add text memo
-    #[arg(short = 'a', long, conflicts_with = "add_html_memo")]
-    add_text_memo: bool,
+    /// Add a note
+    #[arg(short = 'a', long)]
+    add: bool,
 
-    /// Add html memo
-    #[arg(short = 'A', long, conflicts_with = "add_text_memo")]
-    add_html_memo: bool,
+    /// Format of the note to add: text (default), html or markdown
+    #[arg(short = 'f', long, value_enum, default_value_t = NoteFormat::Text)]
+    format: NoteFormat,
 
     /// Ignore case sensitivity
     #[arg(short = 'I', long, default_value_t = false)]
@@ -113,8 +114,8 @@ fn main() -> Result<(), MemoError> {
             .build();
     }
 
-    if cli.add_text_memo || cli.add_html_memo {
-        Memo::create(cli.path.as_deref(), cli.add_html_memo)?;
+    if cli.add {
+        Memo::create(cli.path.as_deref(), cli.format)?;
         return Ok(());
     }
 
@@ -306,12 +307,28 @@ fn main() -> Result<(), MemoError> {
     if !entries.is_empty() {
         result.push_str(&Html::h1(&format!("{h1} ({})", entries.entries().len())));
 
+        // Markdown notes are rendered to HTML on the fly under {root}/render
+        // so the browser shows them formatted. The render dir is outside
+        // {root}/memo, so these files are never loaded as notes.
+        let render_dir = format!("{}/render", memo.root());
+        let _ = fs::remove_dir_all(&render_dir);
+
         let entries: Vec<String> = entries
             .entries()
             .iter()
             .map(|&a| {
                 let fix = Html::clear_html_tags(a.title());
-                let mut s = Html::link(&fix, a.full_path());
+
+                let link_target = if a.is_markdown() {
+                    render_markdown_note(&render_dir, a).unwrap_or_else(|e| {
+                        jwarn!("Failed to render markdown {}: {:?}", a.full_path(), e);
+                        a.full_path().to_owned()
+                    })
+                } else {
+                    a.full_path().to_owned()
+                };
+
+                let mut s = Html::link(&fix, &link_target);
                 s.push('\n');
                 s.push_str(&format!("tags: {}", a.tags()));
                 s.push('\n');
@@ -356,4 +373,29 @@ fn main() -> Result<(), MemoError> {
     }
 
     Ok(())
+}
+
+/// Render a markdown note to an HTML file under `render_dir` and return the
+/// path to that file so it can be linked from the index page.
+fn render_markdown_note(render_dir: &str, entry: &MemoEntry) -> Result<String, MemoError> {
+    fs::create_dir_all(render_dir).map_err(|e| {
+        Report::new(MemoError::IOError)
+            .attach_printable(format!("Failed to create {render_dir}: {e}"))
+    })?;
+
+    let base = Path::new(entry.full_path())
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| {
+            Report::new(MemoError::InvalidValue)
+                .attach_printable(format!("Invalid note path {}", entry.full_path()))
+        })?;
+
+    let output = format!("{render_dir}/{base}.html");
+    let page = Html::markdown_page(entry.title(), entry.body());
+    fs::write(&output, page).map_err(|e| {
+        Report::new(MemoError::IOError).attach_printable(format!("Failed to write {output}: {e}"))
+    })?;
+
+    Ok(output)
 }
