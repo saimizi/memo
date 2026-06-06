@@ -206,6 +206,7 @@ impl MemoEntry {
         let mut title = String::new();
         let mut body = String::new();
         let mut tags = vec![];
+        let tag_re = Regex::new(r"(\[[a-z|A-Z|0-9|_|-]+\])").unwrap();
 
         loop {
             let mut line = String::new();
@@ -223,8 +224,7 @@ impl MemoEntry {
                 title.push_str(&line);
                 title = title.trim_end_matches('\n').to_owned();
 
-                let re = Regex::new(r"(\[[a-z|A-Z|0-9|_|-]+\])").unwrap();
-                tags = re
+                tags = tag_re
                     .find_iter(&title)
                     .map(|m| m.as_str().to_owned())
                     .collect();
@@ -423,7 +423,7 @@ impl Memo {
         self.entries.is_empty()
     }
 
-    pub fn new_search(&self) -> MemoSearch {
+    pub fn new_search(&self) -> MemoSearch<'_> {
         MemoSearch {
             entries: vec![],
             root: &self.root,
@@ -433,7 +433,7 @@ impl Memo {
     pub fn find(
         &self,
         key_pair: Option<(&str, bool, MatchCondition)>,
-    ) -> Result<MemoSearch, MemoError> {
+    ) -> Result<MemoSearch<'_>, MemoError> {
         let mut result = vec![];
         if let Some((key, is_tag, condition)) = key_pair {
             for entry in &self.entries {
@@ -457,7 +457,7 @@ impl Memo {
         })
     }
 
-    pub fn find_else<F>(&self, cb: F) -> Result<MemoSearch, MemoError>
+    pub fn find_else<F>(&self, cb: F) -> Result<MemoSearch<'_>, MemoError>
     where
         F: Fn(&MemoEntry) -> bool,
     {
@@ -484,14 +484,18 @@ impl Memo {
         let file_name = FileName::create(format);
 
         let output = format!("{memo_dir}/{}", file_name.file_name());
+        Memo::open_in_editor(&output)
+    }
+
+    pub fn open_in_editor(path: &str) -> Result<(), MemoError> {
         let editor = env::var("EDITOR").unwrap_or("vim".to_owned());
-        let mut handle = Command::new(editor).arg(&output).spawn().map_err(|e| {
+        let mut handle = Command::new(editor).arg(path).spawn().map_err(|e| {
             Report::new(MemoError::Unexpected)
-                .attach_printable(format!("Failed to execute vim: {e}"))
+                .attach_printable(format!("Failed to execute editor: {e}"))
         })?;
 
         handle.wait().map_err(|e| {
-            Report::new(MemoError::Unexpected).attach_printable(format!("vim failed: {e}"))
+            Report::new(MemoError::Unexpected).attach_printable(format!("editor failed: {e}"))
         })?;
 
         Ok(())
@@ -592,7 +596,7 @@ impl<'a> Add for MemoSearch<'a> {
         }
 
         for &entry in &rhs.entries {
-            if !self.entries.iter().any(|&a| a == entry) {
+            if !self.entries.contains(&entry) {
                 self.entries.push(entry);
             }
         }
@@ -608,8 +612,7 @@ impl<'a> Sub for MemoSearch<'a> {
             return Err(Report::new(MemoError::InvalidValue));
         }
 
-        self.entries
-            .retain(|&entry| !rhs.entries.iter().any(|&a| a == entry));
+        self.entries.retain(|&entry| !rhs.entries.contains(&entry));
         Ok(self)
     }
 }
@@ -621,8 +624,7 @@ impl<'a> Mul for MemoSearch<'a> {
             return Err(Report::new(MemoError::InvalidValue));
         }
 
-        self.entries
-            .retain(|&entry| rhs.entries.iter().any(|&a| a == entry));
+        self.entries.retain(|&entry| rhs.entries.contains(&entry));
         Ok(self)
     }
 }

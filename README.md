@@ -100,3 +100,16 @@ $ memo 'jdemo + jmemo * note' -d
 ![sample](doc/jmemo_06.png)
 
 The example above will delete No1, No2 and No4 notes. If you input "y", "yes", "Y"  or "Yes", all notes listed will be deleted. Other keys will ignore delete operation.
+
+#### Edit Notes
+You can use a "-e" option together with search to select notes to edit.
+
+```
+$ memo 'jdemo + jmemo * note' -e
+```
+
+The search result is listed and numbered just like the delete case. Select the notes to edit by inputting "y", "yes", "Y" or "Yes" (all notes listed) or an index like "1,2,3-5". Other keys will cancel the edit operation. Each selected note is opened in the editor (set by the `EDITOR` environment variable, default `vim`) one by one; close the editor to move on to the next note.
+
+__Note__
+
+* If you remove all the content of a note while editing and quit, the note will be cleaned up the next time jmemo loads it (the same empty-note behavior as when creating a note). So "-e" can also be used to delete a note by clearing it.
