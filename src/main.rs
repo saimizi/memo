@@ -363,8 +363,13 @@ fn select_entries<'a>(entries: &'a MemoSearch, action: &str) -> Vec<&'a MemoEntr
                 if number.contains('-') {
                     if let Some(pos) = number.as_bytes().iter().position(|&a| a == b'-') {
                         let (a, b) = number.split_at(pos);
-                        let a = a.parse::<usize>().unwrap();
-                        let b = b.trim_matches('-').parse::<usize>().unwrap();
+                        // Skip the token if either bound overflows usize rather
+                        // than panicking on out-of-range user input.
+                        let (Ok(a), Ok(b)) =
+                            (a.parse::<usize>(), b.trim_matches('-').parse::<usize>())
+                        else {
+                            continue;
+                        };
 
                         let mut start = a;
                         let mut end = b;
@@ -380,8 +385,8 @@ fn select_entries<'a>(entries: &'a MemoSearch, action: &str) -> Vec<&'a MemoEntr
                             }
                         }
                     }
-                } else {
-                    index.push(number.parse::<usize>().unwrap());
+                } else if let Ok(n) = number.parse::<usize>() {
+                    index.push(n);
                 }
             }
 
