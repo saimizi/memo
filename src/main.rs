@@ -14,7 +14,7 @@ use {
     jlogger_tracing::{
         jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter, LogTimeFormat,
     },
-    memo::{FileName, MatchCondition, Memo, MemoEntry, NoteFormat},
+    memo::{FileName, MatchCondition, Memo, MemoEntry, MemoSearch, NoteFormat},
     std::{
         boxed::Box,
         collections::VecDeque,
@@ -63,6 +63,10 @@ struct Cli {
     /// Delete notes in the search result.
     #[arg(short, long)]
     delete: bool,
+
+    /// Edit notes in the search result.
+    #[arg(short = 'e', long)]
+    edit: bool,
 
     /// Match key as a word
     #[arg(short = 'W', long, default_value_t = false)]
@@ -230,72 +234,26 @@ fn main() -> Result<(), MemoError> {
         memo.find(None)?
     };
 
+    if cli.edit {
+        if !entries.is_empty() {
+            let selected = select_entries(&entries, "edit");
+            for entry in selected {
+                jdebug!("Edit {}\n({})", entry.full_path(), entry.title());
+                Memo::open_in_editor(entry.full_path())?;
+            }
+        } else {
+            jinfo!("No memo to edit.")
+        }
+        return Ok(());
+    }
+
     if cli.delete {
         if !entries.is_empty() {
-            for (i, entry) in entries.entries().into_iter().enumerate() {
-                eprintln!(" {:<4} {}", i + 1, Html::clear_html_tags(entry.title()));
-            }
-
-            eprint!(
-                "\nWhich to delete ( [y|yes|Y|Yes]=all | Index=like 1,2,3-5... | Other=cancel)?"
-            );
-            let mut selection = String::new();
-            io::stdin().read_line(&mut selection).unwrap();
-
-            if selection.is_empty() {
-                return Ok(());
-            }
-
-            match selection.as_str().trim() {
-                "y" | "yes" | "Y" | "Yes" => {
-                    for entry in entries.entries().into_iter() {
-                        jdebug!("Remove {}\n({})", entry.full_path(), entry.title());
-                        if let Err(e) = fs::remove_file(entry.full_path()) {
-                            jerror!("Failed to remove {}: {:?}", entry.full_path(), e);
-                        }
-                    }
-                }
-                patten => {
-                    let mut index: Vec<usize> = vec![];
-                    let patten = patten.replace(' ', "");
-                    let re = Regex::new("(([0-9]+-[0-9]+)|([0-9]+))").unwrap();
-
-                    for it in re.find_iter(&patten) {
-                        let number = it.as_str();
-
-                        if number.contains('-') {
-                            if let Some(pos) = number.as_bytes().iter().position(|&a| a == b'-') {
-                                let (a, b) = number.split_at(pos);
-                                let a = a.parse::<usize>().unwrap();
-                                let b = b.trim_matches('-').parse::<usize>().unwrap();
-
-                                let mut start = a;
-                                let mut end = b;
-
-                                if a > b {
-                                    start = b;
-                                    end = a;
-                                }
-
-                                for i in start..=end {
-                                    if !index.iter().any(|&a| a == i) {
-                                        index.push(i);
-                                    }
-                                }
-                            }
-                        } else {
-                            index.push(number.parse::<usize>().unwrap());
-                        }
-                    }
-
-                    for (i, entry) in entries.entries().into_iter().enumerate() {
-                        if index.iter().any(|&a| a == i + 1) {
-                            jdebug!("Remove {}\n({})", entry.full_path(), entry.title());
-                            if let Err(e) = fs::remove_file(entry.full_path()) {
-                                jerror!("Failed to remove {}: {:?}", entry.full_path(), e);
-                            }
-                        }
-                    }
+            let selected = select_entries(&entries, "delete");
+            for entry in selected {
+                jdebug!("Remove {}\n({})", entry.full_path(), entry.title());
+                if let Err(e) = fs::remove_file(entry.full_path()) {
+                    jerror!("Failed to remove {}: {:?}", entry.full_path(), e);
                 }
             }
         } else {
@@ -373,6 +331,69 @@ fn main() -> Result<(), MemoError> {
     }
 
     Ok(())
+}
+
+/// List the search result numbered, prompt the user to select notes, and return
+/// the chosen entries. `action` is the verb shown in the prompt ("delete",
+/// "edit", ...). `y/yes/Y/Yes` selects all; an index spec like `1,2,3-5` selects
+/// a subset; anything else cancels and returns an empty list.
+fn select_entries<'a>(entries: &'a MemoSearch, action: &str) -> Vec<&'a MemoEntry> {
+    for (i, entry) in entries.entries().into_iter().enumerate() {
+        eprintln!(" {:<4} {}", i + 1, Html::clear_html_tags(entry.title()));
+    }
+
+    eprint!("\nWhich to {action} ( [y|yes|Y|Yes]=all | Index=like 1,2,3-5... | Other=cancel)?");
+    let mut selection = String::new();
+    io::stdin().read_line(&mut selection).unwrap();
+
+    if selection.is_empty() {
+        return vec![];
+    }
+
+    match selection.as_str().trim() {
+        "y" | "yes" | "Y" | "Yes" => entries.entries(),
+        patten => {
+            let mut index: Vec<usize> = vec![];
+            let patten = patten.replace(' ', "");
+            let re = Regex::new("(([0-9]+-[0-9]+)|([0-9]+))").unwrap();
+
+            for it in re.find_iter(&patten) {
+                let number = it.as_str();
+
+                if number.contains('-') {
+                    if let Some(pos) = number.as_bytes().iter().position(|&a| a == b'-') {
+                        let (a, b) = number.split_at(pos);
+                        let a = a.parse::<usize>().unwrap();
+                        let b = b.trim_matches('-').parse::<usize>().unwrap();
+
+                        let mut start = a;
+                        let mut end = b;
+
+                        if a > b {
+                            start = b;
+                            end = a;
+                        }
+
+                        for i in start..=end {
+                            if !index.iter().any(|&a| a == i) {
+                                index.push(i);
+                            }
+                        }
+                    }
+                } else {
+                    index.push(number.parse::<usize>().unwrap());
+                }
+            }
+
+            entries
+                .entries()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| index.iter().any(|&a| a == i + 1))
+                .map(|(_, entry)| entry)
+                .collect()
+        }
+    }
 }
 
 /// Render a markdown note to an HTML file under `render_dir` and return the

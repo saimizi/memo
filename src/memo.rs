@@ -484,14 +484,18 @@ impl Memo {
         let file_name = FileName::create(format);
 
         let output = format!("{memo_dir}/{}", file_name.file_name());
+        Memo::open_in_editor(&output)
+    }
+
+    pub fn open_in_editor(path: &str) -> Result<(), MemoError> {
         let editor = env::var("EDITOR").unwrap_or("vim".to_owned());
-        let mut handle = Command::new(editor).arg(&output).spawn().map_err(|e| {
+        let mut handle = Command::new(editor).arg(path).spawn().map_err(|e| {
             Report::new(MemoError::Unexpected)
-                .attach_printable(format!("Failed to execute vim: {e}"))
+                .attach_printable(format!("Failed to execute editor: {e}"))
         })?;
 
         handle.wait().map_err(|e| {
-            Report::new(MemoError::Unexpected).attach_printable(format!("vim failed: {e}"))
+            Report::new(MemoError::Unexpected).attach_printable(format!("editor failed: {e}"))
         })?;
 
         Ok(())
