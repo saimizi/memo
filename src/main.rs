@@ -375,7 +375,7 @@ fn select_entries<'a>(entries: &'a MemoSearch, action: &str) -> Vec<&'a MemoEntr
                         }
 
                         for i in start..=end {
-                            if !index.iter().any(|&a| a == i) {
+                            if !index.contains(&i) {
                                 index.push(i);
                             }
                         }
