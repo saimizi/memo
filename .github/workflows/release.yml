@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -49,9 +53,10 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install cargo-deb
+      - uses: taiki-e/install-action@v2
         if: steps.check.outputs.release == 'true'
-        run: cargo install cargo-deb
+        with:
+          tool: cargo-deb
 
       - name: Build release binary
         if: steps.check.outputs.release == 'true'
