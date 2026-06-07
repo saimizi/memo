@@ -341,7 +341,7 @@ pub struct Memo {
 #[allow(unused)]
 impl Memo {
     fn setup_root(root_path: Option<&str>) -> Result<(String, String), MemoError> {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
         let mut root = format!("{home}/.memo");
 
         if let Some(r) = root_path {
