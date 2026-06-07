@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release is needed
+        id: check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Creating release for v${{ steps.version.outputs.version }}"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate changelog
+        if: steps.check.outputs.release == 'true'
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git log --oneline --no-decorate "$PREV_TAG..HEAD" > /tmp/changelog.md
+          else
+            git log --oneline --no-decorate > /tmp/changelog.md
+          fi
+          echo "Changelog:"
+          cat /tmp/changelog.md
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        if: steps.check.outputs.release == 'true'
+        with:
+          toolchain: stable
+
+      - uses: taiki-e/install-action@v2
+        if: steps.check.outputs.release == 'true'
+        with:
+          tool: cargo-deb
+
+      - name: Build release binary
+        if: steps.check.outputs.release == 'true'
+        run: cargo build --release
+
+      - name: Build Debian package
+        if: steps.check.outputs.release == 'true'
+        run: cargo deb --no-build
+
+      - name: Create source tarball
+        if: steps.check.outputs.release == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git archive --format=tar.gz \
+            --prefix="memo-${VERSION}/" \
+            HEAD \
+            > "memo-${VERSION}.tar.gz"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release-${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          body_path: /tmp/changelog.md
+          files: |
+            memo-${{ steps.version.outputs.version }}.tar.gz
+            target/debian/*.deb
